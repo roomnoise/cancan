@@ -1,21 +1,20 @@
-if ENV["MODEL_ADAPTER"] == "mongoid"
+if ENV["MODEL_ADAPTER"] == "mongo_mapper"
   require "spec_helper"
 
   class MongoMapperCategory
     include MongoMapper::Document
 
-    references_many :mongo_mapper_projects
+    many :mongo_mapper_projects
   end
 
   class MongoMapperProject
     include MongoMapper::Document
 
-    referenced_in :mongoid_category
+    belongs_to :mongoid_category
   end
 
-  MongoMapper.configure do |config|
-    config.master = Mongo::Connection.new('127.0.0.1', 27017).db("cancan_mongo_mapper_spec")
-  end
+  MongoMapper.connection = Mongo::Connection.new('localhost', 27017)
+  MongoMapper.database = "cancan_mongo_mapper_spec"
 
   describe CanCan::ModelAdapters::MongoMapperAdapter do
     context "MongoMapper defined" do
@@ -25,9 +24,9 @@ if ENV["MODEL_ADAPTER"] == "mongoid"
       end
 
       after(:each) do
-        MongoMapper.master.collections.select do |collection|
-          collection.name !~ /system/
-        end.each(&:drop)
+        MongoMapper.database.collections.each do |coll|
+          coll.remove
+        end
       end
 
       it "should be for only MongoMapper classes" do
@@ -41,17 +40,18 @@ if ENV["MODEL_ADAPTER"] == "mongoid"
         CanCan::ModelAdapters::MongoMapperAdapter.find(MongoMapperProject, project.id).should == project
       end
 
-      it "should compare properties on mongoid documents with the conditions hash" do
+      it "should compare properties on mongmapper documents with the conditions hash" do
         model = MongoMapperProject.new
         @ability.can :read, MongoMapperProject, :id => model.id
         @ability.should be_able_to(:read, model)
       end
 
       it "should be able to read hashes when field is array" do
+        @ability.can :foo, MongoMapperProject, :numbers => 'one'
+        
         one_to_three = MongoMapperProject.create(:numbers => ['one', 'two', 'three'])
         two_to_five  = MongoMapperProject.create(:numbers => ['two', 'three', 'four', 'five'])
 
-        @ability.can :foo, MongoMapperProject, :numbers => 'one'
         @ability.should be_able_to(:foo, one_to_three)
         @ability.should_not be_able_to(:foo, two_to_five)
       end
@@ -81,7 +81,7 @@ if ENV["MODEL_ADAPTER"] == "mongoid"
 
         MongoMapperProject.accessible_by(@ability, :read).count.should == 2
       end
-
+      
       it "should return everything when the defined ability is manage all" do
         @ability.can :manage, :all
         sir   = MongoMapperProject.create(:title => 'Sir')
@@ -99,118 +99,8 @@ if ENV["MODEL_ADAPTER"] == "mongoid"
 
         MongoMapperProject.accessible_by(@ability, :read).entries.should == [sir]
       end
-
-      describe "MongoMapper::Criteria where clause Symbol extensions using MongoDB expressions" do
-        it "should handle :field.in" do
-          obj = MongoMapperProject.create(:title => 'Sir')
-          @ability.can :read, MongoMapperProject, :title.in => ["Sir", "Madam"]
-          @ability.can?(:read, obj).should == true
-          MongoMapperProject.accessible_by(@ability, :read).should == [obj]
-
-          obj2 = MongoMapperProject.create(:title => 'Lord')
-          @ability.can?(:read, obj2).should == false
-        end
-
-        describe "activates only when there are Criteria in the hash" do
-          it "Calls where on the model class when there are criteria" do
-            obj = MongoMapperProject.create(:title => 'Bird')
-            @conditions = {:title.nin => ["Fork", "Spoon"]}
-
-            @ability.can :read, MongoMapperProject, @conditions
-            @ability.should be_able_to(:read, obj)
-          end
-          it "Calls the base version if there are no mongoid criteria" do
-            obj = MongoMapperProject.new(:title => 'Bird')
-            @conditions = {:id => obj.id}
-            @ability.can :read, MongoMapperProject, @conditions
-            @ability.should be_able_to(:read, obj)
-          end
-        end
-
-        it "should handle :field.nin" do
-          obj = MongoMapperProject.create(:title => 'Sir')
-          @ability.can :read, MongoMapperProject, :title.nin => ["Lord", "Madam"]
-          @ability.can?(:read, obj).should == true
-          MongoMapperProject.accessible_by(@ability, :read).should == [obj]
-
-          obj2 = MongoMapperProject.create(:title => 'Lord')
-          @ability.can?(:read, obj2).should == false
-        end
-
-        it "should handle :field.size" do
-          obj = MongoMapperProject.create(:titles => ['Palatin', 'Margrave'])
-          @ability.can :read, MongoMapperProject, :titles.size => 2
-          @ability.can?(:read, obj).should == true
-          MongoMapperProject.accessible_by(@ability, :read).should == [obj]
-
-          obj2 = MongoMapperProject.create(:titles => ['Palatin', 'Margrave', 'Marquis'])
-          @ability.can?(:read, obj2).should == false
-        end
-
-        it "should handle :field.exists" do
-          obj = MongoMapperProject.create(:titles => ['Palatin', 'Margrave'])
-          @ability.can :read, MongoMapperProject, :titles.exists => true
-          @ability.can?(:read, obj).should == true
-          MongoMapperProject.accessible_by(@ability, :read).should == [obj]
-
-          obj2 = MongoMapperProject.create
-          @ability.can?(:read, obj2).should == false
-        end
-
-        it "should handle :field.gt" do
-          obj = MongoMapperProject.create(:age => 50)
-          @ability.can :read, MongoMapperProject, :age.gt => 45
-          @ability.can?(:read, obj).should == true
-          MongoMapperProject.accessible_by(@ability, :read).should == [obj]
-
-          obj2 = MongoMapperProject.create(:age => 40)
-          @ability.can?(:read, obj2).should == false
-        end
-
-        it "should handle instance not saved to database" do
-          obj = MongoMapperProject.new(:title => 'Sir')
-          @ability.can :read, MongoMapperProject, :title.in => ["Sir", "Madam"]
-          @ability.can?(:read, obj).should == true
-
-          # accessible_by only returns saved records
-          MongoMapperProject.accessible_by(@ability, :read).entries.should == []
-
-          obj2 = MongoMapperProject.new(:title => 'Lord')
-          @ability.can?(:read, obj2).should == false
-        end
-      end
-
-      it "should call where with matching ability conditions" do
-        obj = MongoMapperProject.create(:foo => {:bar => 1})
-        @ability.can :read, MongoMapperProject, :foo => {:bar => 1}
-        MongoMapperProject.accessible_by(@ability, :read).entries.first.should == obj
-      end
       
-      it "should exclude from the result if set to cannot" do
-        obj = MongoMapperProject.create(:bar => 1)
-        obj2 = MongoMapperProject.create(:bar => 2)
-        @ability.can :read, MongoMapperProject
-        @ability.cannot :read, MongoMapperProject, :bar => 2
-        MongoMapperProject.accessible_by(@ability, :read).entries.should == [obj]
-      end
-
-      it "should combine the rules" do
-        obj = MongoMapperProject.create(:bar => 1)
-        obj2 = MongoMapperProject.create(:bar => 2)
-        obj3 = MongoMapperProject.create(:bar => 3)
-        @ability.can :read, MongoMapperProject, :bar => 1
-        @ability.can :read, MongoMapperProject, :bar => 2
-        MongoMapperProject.accessible_by(@ability, :read).entries.should =~ [obj, obj2]
-      end
       
-      it "should not allow to fetch records when ability with just block present" do
-        @ability.can :read, MongoMapperProject do
-          false
-        end
-        lambda {
-          MongoMapperProject.accessible_by(@ability)
-        }.should raise_error(CanCan::Error)
-      end
-    end
+    end  
   end
 end
