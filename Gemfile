@@ -1,7 +1,8 @@
 source "http://rubygems.org"
 
+
 case ENV["MODEL_ADAPTER"]
-when nil, "active_record"
+when "active_record"
   gem "sqlite3"
   gem "activerecord", :require => "active_record"
   gem "with_model"
@@ -13,7 +14,7 @@ when "data_mapper"
 when "mongoid"
   gem "bson_ext", "~> 1.1"
   gem "mongoid", "~> 2.0.0.beta.20"
-when "mongo_mapper"
+when nil, "mongo_mapper"
   gem "bson_ext", "~> 1.1"
   gem 'mongo_mapper', '~> 0.9.0'
 else
