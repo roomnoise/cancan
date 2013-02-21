@@ -15,11 +15,17 @@ module CanCan
           # there are no rules with empty conditions
           rules = @rules.reject { |rule| rule.conditions.empty? }
           process_can_rules = @rules.count == rules.count
-          rules.inject(@model_class.all) do |records, rule|
+
+          rules.inject( @model_class.limit(999999) ) do |records, rule|
+
             if process_can_rules && rule.base_behavior
-              records.select{|r| r.find(rule.conditions)} #.or rule.conditions
+              records.where(:$or=> [rule.conditions])
             elsif !rule.base_behavior
-              records.excludes rule.conditions
+              neg_conds = {} 
+              rule.conditions.each_pair do |k,v|  
+                  neg_conds[k] = { :$ne => v }
+              end
+              records.where(neg_conds)
             else
               records
             end

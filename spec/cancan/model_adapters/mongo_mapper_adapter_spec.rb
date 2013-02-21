@@ -10,7 +10,7 @@ if ENV["MODEL_ADAPTER"] == "mongo_mapper"
   class MongoMapperProject
     include MongoMapper::Document
 
-    belongs_to :mongoid_category
+    belongs_to :mongo_mapper_category
   end
 
   MongoMapper.connection = Mongo::Connection.new('localhost', 27017)
@@ -99,7 +99,32 @@ if ENV["MODEL_ADAPTER"] == "mongo_mapper"
 
         MongoMapperProject.accessible_by(@ability, :read).entries.should == [sir]
       end
+
+      it "should combine the rules" do
+
+        obj = MongoMapperProject.create(:bar => 1)
+        obj2 = MongoMapperProject.create(:bar => 2)
+        obj3 = MongoMapperProject.create(:bar => 3)
+        @ability.can :read, MongoMapperProject, :bar => 1
+        @ability.can :read, MongoMapperProject, :bar => 2
+        MongoMapperProject.accessible_by(@ability, :read).entries.should =~ [obj, obj2]
+
+      end
       
+      it "should combine the rules, and exclude some" do
+
+        obj = MongoMapperProject.create(:bar => 1, :foo=> 1)
+        obj2 = MongoMapperProject.create(:bar => 2, :foo => 2)
+        obj3 = MongoMapperProject.create(:bar => 3, :foo => 3)
+        obj4 = MongoMapperProject.create(:bar => 2, :foo => 4)
+        @ability.can :read, MongoMapperProject, :bar => 1
+        @ability.can :edit, MongoMapperProject, :bar => 2
+        @ability.can :edit, MongoMapperProject, :foo => 3
+        @ability.cannot :edit, MongoMapperProject, :foo => 4
+
+        MongoMapperProject.accessible_by(@ability, :edit).entries.should =~ [obj2, obj3]
+
+      end
       
     end  
   end
